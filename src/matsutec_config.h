@@ -163,6 +163,8 @@ class MMSIConfig : public sensesp::Saveable, public sensesp::Serializable {
     return true;
   }
 
+  const String& get_mmsi() const { return mmsi_; }
+
  protected:
   String mmsi_ = "";
   std::shared_ptr<MatsutecMMSIParser> parser_;

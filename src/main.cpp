@@ -10,6 +10,7 @@
 #include "ais/ais_vdm_parser.h"
 #include "matsutec_config.h"
 #include "matsutec_ha102_parser.h"
+#include "operating_mode_config.h"
 #include "sender/ais_n2k_senders.h"
 #include "sensesp/system/serial_number.h"
 #include "sensesp/system/stream_producer.h"
@@ -159,6 +160,16 @@ void setup() {
           "board, destination, arrival time, and navigational "
           "status.")
       ->set_sort_order(2500);
+
+  auto operating_mode_config = std::make_shared<OperatingModeConfig>(
+      mmsi_config, &Serial1, "/AIS/Operating Mode");
+
+  ConfigItem(operating_mode_config)
+      ->set_title("Operating Mode")
+      ->set_description(
+          "When receive-only mode is enabled, the transponder will "
+          "not transmit AIS data. The configured MMSI is preserved.")
+      ->set_sort_order(500);
 
   /////////////////////////////////////////////////////////////////////
   // Initialize NMEA 2000 functionality
