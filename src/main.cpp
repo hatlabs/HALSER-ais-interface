@@ -7,6 +7,7 @@
 
 #include "Wire.h"
 #include "elapsedMillis.h"
+#include "ais/ais_vdm_parser.h"
 #include "matsutec_config.h"
 #include "matsutec_ha102_parser.h"
 #include "sender/n2k_senders.h"
@@ -91,6 +92,33 @@ void setup() {
   voyage_data_parser->persons_on_board_.connect_to(
       std::make_shared<LambdaConsumer<int>>(
           [](int persons) { ESP_LOGI("AIS", "Persons: %d", persons); }));
+
+  /////////////////////////////////////////////////////////////////////
+  // AIS VDM/VDO sentence parser
+
+  auto ais_vdm_parser =
+      std::make_shared<ais::AISVDMSentenceParser>(&nmea0183_io_task->parser_);
+
+  ais_vdm_parser->class_a_position_.connect_to(
+      std::make_shared<LambdaConsumer<ais::ClassAPositionReport>>(
+          [](ais::ClassAPositionReport report) {
+            ESP_LOGI("AIS", "Class A pos: MMSI=%u SOG=%.1f COG=%.1f",
+                     report.mmsi, report.sog, report.cog);
+          }));
+
+  ais_vdm_parser->class_b_position_.connect_to(
+      std::make_shared<LambdaConsumer<ais::ClassBPositionReport>>(
+          [](ais::ClassBPositionReport report) {
+            ESP_LOGI("AIS", "Class B pos: MMSI=%u SOG=%.1f COG=%.1f",
+                     report.mmsi, report.sog, report.cog);
+          }));
+
+  ais_vdm_parser->class_a_static_.connect_to(
+      std::make_shared<LambdaConsumer<ais::ClassAStaticData>>(
+          [](ais::ClassAStaticData data) {
+            ESP_LOGI("AIS", "Class A static: MMSI=%u Name=%s Call=%s",
+                     data.mmsi, data.name, data.callsign);
+          }));
 
   /////////////////////////////////////////////////////////////////////
   // Config objects
