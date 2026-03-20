@@ -418,6 +418,23 @@ class VoyageStaticDataConfig : public sensesp::FileSystemSaveable,
     return true;
   }
 
+  // Setters for individual fields. Each updates the field and saves
+  // to the transponder.
+  void set_destination(const String& destination) {
+    destination_ = destination;
+    save();
+  }
+
+  void set_arrival_time(time_t arrival_time) {
+    arrival_time_ = arrival_time;
+    save();
+  }
+
+  void set_persons_on_board(int persons) {
+    persons_on_board_ = persons;
+    save();
+  }
+
  protected:
   int ship_type_ = 0;
   float max_draught_ = 0;
