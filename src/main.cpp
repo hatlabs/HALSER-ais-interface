@@ -11,7 +11,6 @@
 #include "matsutec_config.h"
 #include "matsutec_ha102_parser.h"
 #include "sender/ais_n2k_senders.h"
-#include "sender/n2k_senders.h"
 #include "sensesp/system/serial_number.h"
 #include "sensesp/system/stream_producer.h"
 #include "sensesp/transforms/filter.h"
@@ -20,10 +19,8 @@
 #include "sensesp/ui/ui_controls.h"
 #include "sensesp_app_builder.h"
 #include "sensesp_nmea0183/nmea0183.h"
+#include "signalk/sk_ais_output.h"
 #include "ssd1306_display.h"
-#include "streaming_tcp_client.h"
-#include "streaming_tcp_server.h"
-#include "ui_config.h"
 
 using namespace sensesp;
 using namespace sensesp::nmea0183;
@@ -163,44 +160,6 @@ void setup() {
           "status.")
       ->set_sort_order(2500);
 
-  auto port_config_ais_tcp_tx = std::make_shared<PortConfig>(
-      true, 10110, "/AIS/RX Data TCP Port", "AIS TCP RX Port");
-
-  ConfigItem(port_config_ais_tcp_tx)
-      ->set_title("AIS TCP RX Port")
-      ->set_description(
-          "The port on which the AIS TCP server will listen for "
-          "incoming data.")
-      ->set_sort_order(3000);
-
-  int ais_tx_port = port_config_ais_tcp_tx->get_port();
-
-  auto host_port_config_sk_nmea0183_tcp_rx = std::make_shared<HostPortConfig>(
-      true, "openplotter.local", 10110, "Enable", "Host", "Port",
-      "/SignalK/NMEA0183 RX", "Signal K server NMEA 0183 data TCP port");
-
-  ConfigItem(host_port_config_sk_nmea0183_tcp_rx)
-      ->set_title("Signal K NMEA 0183 TCP RX")
-      ->set_description(
-          "The host and port of the Signal K server that will "
-          "receive AIS data from this device.")
-      ->set_sort_order(5000);
-
-  String sk_hostname = host_port_config_sk_nmea0183_tcp_rx->get_host();
-  int sk_n0183_port = host_port_config_sk_nmea0183_tcp_rx->get_port();
-
-  auto ais_tcp_server = std::make_shared<StreamingTCPServer>(
-      ais_tx_port, SensESPApp::get()->get_networking(),
-      port_config_ais_tcp_tx->get_enabled());
-
-  auto sk_nmea0183_tcp_client = std::make_shared<StreamingTCPClient>(
-      sk_hostname, sk_n0183_port, SensESPApp::get()->get_networking(),
-      host_port_config_sk_nmea0183_tcp_rx->get_enabled());
-
-  // Wire NMEA 0183 sentences to TCP server and Signal K client
-  nmea0183_io_task->sentence_filter_->connect_to(ais_tcp_server);
-  nmea0183_io_task->sentence_filter_->connect_to(sk_nmea0183_tcp_client);
-
   /////////////////////////////////////////////////////////////////////
   // Initialize NMEA 2000 functionality
 
@@ -261,6 +220,25 @@ void setup() {
   ais_vdm_parser->safety_message_.connect_to(safety_msg_sender);
   ais_vdm_parser->class_b_static_.connect_to(class_b_static_sender);
   ais_vdm_parser->aton_report_.connect_to(aton_sender);
+
+  /////////////////////////////////////////////////////////////////////
+  // AIS → Signal K output
+
+  auto sk_ais_output = std::make_shared<ais::SKAISOutput>(
+      SensESPApp::get()->get_ws_client());
+
+  ais_vdm_parser->class_a_position_.connect_to(
+      sk_ais_output->class_a_position_consumer());
+  ais_vdm_parser->class_b_position_.connect_to(
+      sk_ais_output->class_b_position_consumer());
+  ais_vdm_parser->class_a_static_.connect_to(
+      sk_ais_output->class_a_static_consumer());
+  ais_vdm_parser->class_b_static_.connect_to(
+      sk_ais_output->class_b_static_consumer());
+  ais_vdm_parser->safety_message_.connect_to(
+      sk_ais_output->safety_message_consumer());
+  ais_vdm_parser->aton_report_.connect_to(
+      sk_ais_output->aton_report_consumer());
 
   /////////////////////////////////////////////////////////////////////
   // Configuration elements
