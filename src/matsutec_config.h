@@ -386,6 +386,11 @@ class VoyageStaticDataConfig : public sensesp::FileSystemSaveable,
     save();
   }
 
+  void set_persons_on_board(int persons) {
+    persons_on_board_ = persons;
+    save();
+  }
+
  protected:
   int ship_type_ = 0;
   float max_draught_ = 0;
