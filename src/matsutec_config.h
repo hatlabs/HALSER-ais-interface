@@ -148,6 +148,8 @@ class MMSIConfig : public sensesp::Saveable, public sensesp::Serializable {
     return true;
   }
 
+  const String& get_mmsi() const { return mmsi_; }
+
  protected:
   String mmsi_ = "";
   std::shared_ptr<MatsutecMMSIParser> parser_;
@@ -370,6 +372,18 @@ class VoyageStaticDataConfig : public sensesp::FileSystemSaveable,
     response_handler_.activate();
     serial_->println(command_sentence);
     return true;
+  }
+
+  // Setters for individual fields. Each updates the field and saves
+  // to the transponder.
+  void set_destination(const String& destination) {
+    destination_ = destination;
+    save();
+  }
+
+  void set_arrival_time(time_t arrival_time) {
+    arrival_time_ = arrival_time;
+    save();
   }
 
  protected:
