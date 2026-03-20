@@ -18,31 +18,31 @@
 
 namespace ais_interface {
 
-String MatsutecQueryMMSISentence() {
+inline String MatsutecQueryMMSISentence() {
   String sentence = "$PAMC,Q,MID";
   sensesp::nmea0183::AddChecksum(sentence);
   return sentence;
 }
 
-String MatsutecConfigureMMSISentence(String& mmsi) {
+inline String MatsutecConfigureMMSISentence(String& mmsi) {
   String sentence = "$PAMC,C,MID," + mmsi + ",000000000";
   sensesp::nmea0183::AddChecksum(sentence);
   return sentence;
 }
 
-String MatsutecQueryShipDataSentence() {
+inline String MatsutecQueryShipDataSentence() {
   String sentence = "$ECAIQ,SSD";
   sensesp::nmea0183::AddChecksum(sentence);
   return sentence;
 }
 
-String MatsutecQueryVoyageStaticDataSentence() {
+inline String MatsutecQueryVoyageStaticDataSentence() {
   String sentence = "$ECAIQ,VSD";
   sensesp::nmea0183::AddChecksum(sentence);
   return sentence;
 }
 
-String SetStaticShipDataSentence(const char* callsign, const char* ship_name,
+inline String SetStaticShipDataSentence(const char* callsign, const char* ship_name,
                                  int antenna_dist_to_bow,
                                  int antenna_dist_to_stern,
                                  int antenna_dist_to_port,
@@ -56,7 +56,7 @@ String SetStaticShipDataSentence(const char* callsign, const char* ship_name,
   return sentence;
 }
 
-String SetVoyageStaticDataSentence(int ship_type_, float max_draught_,
+inline String SetVoyageStaticDataSentence(int ship_type_, float max_draught_,
                                    int persons_on_board_, String destination_,
                                    time_t arrival_time_,
                                    int navigational_status_) {

@@ -24,7 +24,7 @@ class PortConfig : public sensesp::FileSystemSaveable,
   }
 
   inline virtual bool to_json(JsonObject& doc) override {
-    doc["enabled"] = enabled_;
+    doc["enable"] = enabled_;
     doc["port"] = port_;
     return true;
   }
