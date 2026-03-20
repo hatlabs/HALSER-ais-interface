@@ -10,6 +10,7 @@
 #include "ais/ais_vdm_parser.h"
 #include "matsutec_config.h"
 #include "matsutec_ha102_parser.h"
+#include "sender/ais_n2k_senders.h"
 #include "sender/n2k_senders.h"
 #include "sensesp/system/serial_number.h"
 #include "sensesp/system/stream_producer.h"
@@ -228,9 +229,38 @@ void setup() {
     n2k_time_since_rx = 0;
   });
   nmea2000->EnableForward(false);
+
+  const unsigned long kAISTransmitMessages[] = {
+      129038UL, 129039UL, 129794UL, 129802UL,
+      129809UL, 129810UL, 129041UL, 0};
+  nmea2000->ExtendTransmitMessages(kAISTransmitMessages);
+
   nmea2000->Open();
 
   event_loop()->onRepeat(1, [nmea2000]() { nmea2000->ParseMessages(); });
+
+  /////////////////////////////////////////////////////////////////////
+  // AIS → NMEA 2000 senders
+
+  auto class_a_pos_sender =
+      std::make_shared<ais::AISClassAPositionN2kSender>(nmea2000.get());
+  auto class_b_pos_sender =
+      std::make_shared<ais::AISClassBPositionN2kSender>(nmea2000.get());
+  auto class_a_static_sender =
+      std::make_shared<ais::AISClassAStaticN2kSender>(nmea2000.get());
+  auto safety_msg_sender =
+      std::make_shared<ais::AISSafetyMessageN2kSender>(nmea2000.get());
+  auto class_b_static_sender =
+      std::make_shared<ais::AISClassBStaticN2kSender>(nmea2000.get());
+  auto aton_sender =
+      std::make_shared<ais::AISAtoNN2kSender>(nmea2000.get());
+
+  ais_vdm_parser->class_a_position_.connect_to(class_a_pos_sender);
+  ais_vdm_parser->class_b_position_.connect_to(class_b_pos_sender);
+  ais_vdm_parser->class_a_static_.connect_to(class_a_static_sender);
+  ais_vdm_parser->safety_message_.connect_to(safety_msg_sender);
+  ais_vdm_parser->class_b_static_.connect_to(class_b_static_sender);
+  ais_vdm_parser->aton_report_.connect_to(aton_sender);
 
   /////////////////////////////////////////////////////////////////////
   // Configuration elements
