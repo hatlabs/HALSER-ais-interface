@@ -224,8 +224,7 @@ void setup() {
   /////////////////////////////////////////////////////////////////////
   // AIS → Signal K output
 
-  auto sk_ais_output = std::make_shared<ais::SKAISOutput>(
-      SensESPApp::get()->get_ws_client());
+  auto sk_ais_output = std::make_shared<ais::SKAISOutput>();
 
   ais_vdm_parser->class_a_position_.connect_to(
       sk_ais_output->class_a_position_consumer());
