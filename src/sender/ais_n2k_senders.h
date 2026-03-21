@@ -5,6 +5,7 @@
 
 #include <ctime>
 
+#include "N2kMsg.h"
 #include "ais/ais_conversions.h"
 #include "ais/ais_message_types.h"
 #include "sensesp/system/lambda_consumer.h"
@@ -63,17 +64,29 @@ class AISClassAStaticN2kSender
   void set(const ClassAStaticData& d) override {
     auto dims = dimensions_to_n2k(d.to_bow, d.to_stern, d.to_port,
                                    d.to_starboard);
+
+    // ETA requires a valid system clock to resolve the year.
+    // Before GNSS time sync, use N2K "not available" values.
+    constexpr time_t kMinValidTime = 1704067200;  // 2024-01-01T00:00:00Z
+    uint16_t eta_date = N2kUInt16NA;
+    double eta_time = N2kDoubleNA;
+
     time_t now = time(nullptr);
-    struct tm* tm_now = gmtime(&now);
-    uint16_t current_year = tm_now ? static_cast<uint16_t>(tm_now->tm_year + 1900) : 2026;
-    auto eta = eta_to_n2k(d.month, d.day, d.hour, d.minute, current_year);
+    if (now >= kMinValidTime) {
+      struct tm* tm_now = gmtime(&now);
+      uint16_t current_year =
+          static_cast<uint16_t>(tm_now->tm_year + 1900);
+      auto eta = eta_to_n2k(d.month, d.day, d.hour, d.minute, current_year);
+      eta_date = eta.date;
+      eta_time = eta.time;
+    }
 
     tN2kMsg msg;
     SetN2kPGN129794(
         msg, d.message_id,
         static_cast<tN2kAISRepeat>(d.repeat & 0x03), d.mmsi, d.imo,
         d.callsign, d.name, d.ship_type, dims.length, dims.beam,
-        dims.pos_ref_stbd, dims.pos_ref_bow, eta.date, eta.time,
+        dims.pos_ref_stbd, dims.pos_ref_bow, eta_date, eta_time,
         d.draught, d.destination,
         static_cast<tN2kAISVersion>(d.ais_version),
         static_cast<tN2kGNSStype>(d.epfd),

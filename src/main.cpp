@@ -2,6 +2,7 @@
 // Matsutec HA-102 AIS transponder to NMEA 2000 gateway
 
 #include <NMEA2000_esp32.h>
+#include <sys/time.h>
 
 #include <memory>
 
@@ -21,6 +22,7 @@
 #include "sensesp/signalk/signalk_value_listener.h"
 #include "sensesp_app_builder.h"
 #include "sensesp_nmea0183/nmea0183.h"
+#include "sensesp_nmea0183/sentence_parser/gnss_sentence_parser.h"
 #include "signalk/sk_ais_output.h"
 #include "ssd1306_display.h"
 
@@ -92,6 +94,25 @@ void setup() {
   voyage_data_parser->persons_on_board_.connect_to(
       std::make_shared<LambdaConsumer<int>>(
           [](int persons) { ESP_LOGI("AIS", "Persons: %d", persons); }));
+
+  /////////////////////////////////////////////////////////////////////
+  // GNSS time sync — set system clock from Matsutec RMC sentences
+
+  auto rmc_parser =
+      std::make_shared<RMCSentenceParser>(&nmea0183_io_task->parser_);
+
+  constexpr time_t kSyncIntervalSecs = 3600;
+
+  rmc_parser->datetime_.connect_to(
+      std::make_shared<LambdaConsumer<time_t>>([](time_t gnss_time) {
+        static time_t last_sync = 0;
+        if (last_sync == 0 || (gnss_time - last_sync) >= kSyncIntervalSecs) {
+          struct timeval tv = {.tv_sec = gnss_time, .tv_usec = 0};
+          settimeofday(&tv, nullptr);
+          last_sync = gnss_time;
+          ESP_LOGI("AIS", "System clock set from GNSS: %ld", (long)gnss_time);
+        }
+      }));
 
   /////////////////////////////////////////////////////////////////////
   // AIS VDM/VDO sentence parser
