@@ -10,6 +10,7 @@
 #include "ais/ais_vdm_parser.h"
 #include "matsutec_config.h"
 #include "matsutec_ha102_parser.h"
+#include "operating_mode_config.h"
 #include "sender/ais_n2k_senders.h"
 #include "sensesp/system/serial_number.h"
 #include "sensesp/system/stream_producer.h"
@@ -17,6 +18,7 @@
 #include "sensesp/transforms/zip.h"
 #include "sensesp/ui/status_page_item.h"
 #include "sensesp/ui/ui_controls.h"
+#include "sensesp/signalk/signalk_value_listener.h"
 #include "sensesp_app_builder.h"
 #include "sensesp_nmea0183/nmea0183.h"
 #include "signalk/sk_ais_output.h"
@@ -159,6 +161,49 @@ void setup() {
           "board, destination, arrival time, and navigational "
           "status.")
       ->set_sort_order(2500);
+
+  auto operating_mode_config = std::make_shared<OperatingModeConfig>(
+      mmsi_config, &Serial1, "/AIS/Operating Mode");
+
+  ConfigItem(operating_mode_config)
+      ->set_title("Operating Mode")
+      ->set_description(
+          "When receive-only mode is enabled, the transponder will "
+          "not transmit AIS data. The configured MMSI is preserved.")
+      ->set_sort_order(500);
+
+  /////////////////////////////////////////////////////////////////////
+  // Signal K voyage data input — receive updates from SK server
+
+  auto sk_destination_listener = std::make_shared<SKValueListener<String>>(
+      "navigation.destination.commonName", 5000);
+  sk_destination_listener->connect_to(
+      std::make_shared<LambdaConsumer<String>>(
+          [voyage_data_config](String dest) {
+            ESP_LOGI("AIS", "SK destination update: %s", dest.c_str());
+            voyage_data_config->set_destination(dest);
+          }));
+
+  auto sk_eta_listener = std::make_shared<SKValueListener<String>>(
+      "navigation.destination.eta", 5000);
+  sk_eta_listener->connect_to(std::make_shared<LambdaConsumer<String>>(
+      [voyage_data_config](String eta_str) {
+        // Parse ISO 8601 timestamp to time_t
+        struct tm tm = {};
+        if (strptime(eta_str.c_str(), "%Y-%m-%dT%H:%M:%S", &tm) != nullptr) {
+          time_t eta = timegm(&tm);
+          ESP_LOGI("AIS", "SK ETA update: %s", eta_str.c_str());
+          voyage_data_config->set_arrival_time(eta);
+        }
+      }));
+
+  auto sk_persons_listener = std::make_shared<SKValueListener<int>>(
+      "communication.crewCount", 5000);
+  sk_persons_listener->connect_to(std::make_shared<LambdaConsumer<int>>(
+      [voyage_data_config](int persons) {
+        ESP_LOGI("AIS", "SK persons on board update: %d", persons);
+        voyage_data_config->set_persons_on_board(persons);
+      }));
 
   /////////////////////////////////////////////////////////////////////
   // Initialize NMEA 2000 functionality
