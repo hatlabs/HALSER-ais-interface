@@ -64,7 +64,7 @@ void setup() {
 
   Serial1.begin(kAISBitRate, SERIAL_8N1, kUART1RxPin, kUART1TxPin);
 
-  auto nmea0183_io_task = std::make_shared<NMEA0183IOTask>(&Serial1);
+  auto nmea0183_io_task = std::make_shared<NMEA0183IO>(&Serial1);
 
   auto mmsi_parser =
       std::make_shared<MatsutecMMSIParser>(nmea0183_io_task->parser_);
