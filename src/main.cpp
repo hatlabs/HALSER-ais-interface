@@ -1,5 +1,9 @@
-#include <Adafruit_NeoPixel.h>
+// HALSER AIS Interface Firmware
+// Matsutec HA-102 AIS transponder to NMEA 2000 gateway
+
 #include <NMEA2000_esp32.h>
+
+#include <memory>
 
 #include "Wire.h"
 #include "elapsedMillis.h"
@@ -13,7 +17,7 @@
 #include "sensesp/ui/status_page_item.h"
 #include "sensesp/ui/ui_controls.h"
 #include "sensesp_app_builder.h"
-#include "sensesp_nmea0183/wiring.h"
+#include "sensesp_nmea0183/nmea0183.h"
 #include "ssd1306_display.h"
 #include "streaming_tcp_client.h"
 #include "streaming_tcp_server.h"
@@ -31,36 +35,26 @@ constexpr gpio_num_t kCANTxPin = GPIO_NUM_4;
 constexpr gpio_num_t kCANRxPin = GPIO_NUM_5;
 constexpr int kI2CSDAPin = 6;
 constexpr int kI2CSCLPin = 7;
-constexpr int kRGBLEDPin = 8;
 constexpr int kButtonPin = 9;
 
-static Adafruit_NeoPixel* led = nullptr;
-
 ObservableValue<int> n2k_rx_counter{0};
-ObservableValue<int> n2k_tx_counter{0};
 
 elapsedMillis n2k_time_since_rx = 0;
-elapsedMillis n2k_time_since_tx = 0;
 
 void setup() {
   Serial.setTxTimeoutMs(0);
-  SetupLogging();
+  SetupLogging(ESP_LOG_DEBUG);
 
   Wire.setPins(kI2CSDAPin, kI2CSCLPin);
   Wire.begin();
 
   // SensESP application
   SensESPAppBuilder builder;
-  auto sensesp_app = (&builder)
-                         ->set_hostname("ais")
-                         ->set_button_pin(kButtonPin)
-                         ->enable_ota("thisisfine")
-                         ->get_app();
-
-  // RGB LED for activity indication
-  led = new Adafruit_NeoPixel(1, kRGBLEDPin, NEO_GRB + NEO_KHZ800);
-  led->begin();
-  led->setBrightness(30);
+  sensesp_app = (&builder)
+                    ->set_hostname("ais")
+                    ->set_button_pin(kButtonPin)
+                    ->enable_ota("thisisfine")
+                    ->get_app();
 
   Serial1.begin(kAISBitRate, SERIAL_8N1, kUART1RxPin, kUART1TxPin);
 
@@ -174,12 +168,15 @@ void setup() {
       sk_hostname, sk_n0183_port, SensESPApp::get()->get_networking(),
       host_port_config_sk_nmea0183_tcp_rx->get_enabled());
 
+  // Wire NMEA 0183 sentences to TCP server and Signal K client
+  nmea0183_io_task->sentence_filter_->connect_to(ais_tcp_server);
+  nmea0183_io_task->sentence_filter_->connect_to(sk_nmea0183_tcp_client);
+
   /////////////////////////////////////////////////////////////////////
   // Initialize NMEA 2000 functionality
 
   auto nmea2000 = std::make_shared<tNMEA2000_esp32>(kCANTxPin, kCANRxPin);
 
-  // Reserve enough buffer for sending all messages.
   nmea2000->SetN2kCANSendFrameBufSize(250);
   nmea2000->SetN2kCANReceiveFrameBufSize(250);
 
@@ -236,28 +233,14 @@ void setup() {
 
   n2k_rx_counter.connect_to(n2k_rx_ui_output);
 
-  auto n2k_tx_ui_output = std::make_shared<StatusPageItem<int>>(
-      "NMEA 2000 Transmitted Messages", 0, "NMEA 2000", 310);
-
-  n2k_tx_counter.connect_to(n2k_tx_ui_output);
-
   /////////////////////////////////////////////////////////////////////
   // Initialize the OLED display
 
   auto display = std::make_shared<InfoDisplay>(&Wire);
 
-  /////////////////////////////////////////////////////////////////////
-  // LED animation + main loop
-
-  event_loop()->onRepeat(10, []() {
-    uint16_t hue = (uint16_t)((millis() % 1000) * 65536UL / 1000);
-    led->setPixelColor(0, led->ColorHSV(hue));
-    led->show();
-  });
-
   while (true) {
-    event_loop()->tick();
+    loop();
   }
 }
 
-void loop() {}
+void loop() { event_loop()->tick(); }

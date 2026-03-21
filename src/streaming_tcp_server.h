@@ -86,10 +86,12 @@ class StreamingTCPServer : public sensesp::ValueProducer<String>,
       add_client(client);
     }
 
-    for (auto it = clients_.begin(); it != clients_.end(); it++) {
+    for (auto it = clients_.begin(); it != clients_.end();) {
       if ((*it).client_ != NULL) {
         if (!(*it).client_->connected()) {
           stop_client(it);
+        } else {
+          ++it;
         }
       } else {
         debugW("Client did not get automatically erased");
