@@ -3,13 +3,13 @@
 
 #include <cstdint>
 #include <cstring>
-#include <optional>
 
 namespace ais {
 
-// Result of a reassembly attempt: the complete payload string and fill bits.
+// Non-owning view of a completed reassembly result.
+// Valid only until the next add_fragment() call.
 struct ReassembledPayload {
-  char payload[512];  // Accumulated 6-bit ASCII payload
+  const char* payload;  // Pointer into the reassembler's internal buffer
   int fill_bits;
 };
 
@@ -23,8 +23,9 @@ class AISReassembler {
     reset();
   }
 
-  // Process a fragment. Returns the complete payload when all fragments
-  // have been received, or std::nullopt if more fragments are needed.
+  // Process a fragment. Returns a pointer to the complete payload when all
+  // fragments have been received, or nullptr if more fragments are needed.
+  // The returned pointer is valid only until the next add_fragment() call.
   //
   // total_fragments: total number of fragments (1-5)
   // fragment_num: this fragment's number (1-based)
@@ -32,7 +33,7 @@ class AISReassembler {
   // payload: the 6-bit ASCII armored payload of this fragment
   // fill_bits: number of fill bits (only meaningful for last fragment)
   // now_ms: current time in milliseconds (for timeout detection)
-  std::optional<ReassembledPayload> add_fragment(
+  const ReassembledPayload* add_fragment(
       int total_fragments, int fragment_num, int seq_id,
       const char* payload, int fill_bits, uint32_t now_ms);
 
@@ -49,6 +50,9 @@ class AISReassembler {
   char payload_buffer_[512];
   int last_fill_bits_;
   uint32_t first_fragment_time_;
+
+  // Result view — valid after a successful reassembly
+  ReassembledPayload result_;
 };
 
 }  // namespace ais
