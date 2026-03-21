@@ -1,11 +1,16 @@
-#include <Adafruit_NeoPixel.h>
+// HALSER AIS Interface Firmware
+// Matsutec HA-102 AIS transponder to NMEA 2000 gateway
+
 #include <NMEA2000_esp32.h>
+
+#include <memory>
 
 #include "Wire.h"
 #include "elapsedMillis.h"
+#include "ais/ais_vdm_parser.h"
 #include "matsutec_config.h"
 #include "matsutec_ha102_parser.h"
-#include "sender/n2k_senders.h"
+#include "sender/ais_n2k_senders.h"
 #include "sensesp/system/serial_number.h"
 #include "sensesp/system/stream_producer.h"
 #include "sensesp/transforms/filter.h"
@@ -13,11 +18,9 @@
 #include "sensesp/ui/status_page_item.h"
 #include "sensesp/ui/ui_controls.h"
 #include "sensesp_app_builder.h"
-#include "sensesp_nmea0183/wiring.h"
+#include "sensesp_nmea0183/nmea0183.h"
+#include "signalk/sk_ais_output.h"
 #include "ssd1306_display.h"
-#include "streaming_tcp_client.h"
-#include "streaming_tcp_server.h"
-#include "ui_config.h"
 
 using namespace sensesp;
 using namespace sensesp::nmea0183;
@@ -31,40 +34,30 @@ constexpr gpio_num_t kCANTxPin = GPIO_NUM_4;
 constexpr gpio_num_t kCANRxPin = GPIO_NUM_5;
 constexpr int kI2CSDAPin = 6;
 constexpr int kI2CSCLPin = 7;
-constexpr int kRGBLEDPin = 8;
 constexpr int kButtonPin = 9;
 
-static Adafruit_NeoPixel* led = nullptr;
-
 ObservableValue<int> n2k_rx_counter{0};
-ObservableValue<int> n2k_tx_counter{0};
 
 elapsedMillis n2k_time_since_rx = 0;
-elapsedMillis n2k_time_since_tx = 0;
 
 void setup() {
   Serial.setTxTimeoutMs(0);
-  SetupLogging();
+  SetupLogging(ESP_LOG_DEBUG);
 
   Wire.setPins(kI2CSDAPin, kI2CSCLPin);
   Wire.begin();
 
   // SensESP application
   SensESPAppBuilder builder;
-  auto sensesp_app = (&builder)
-                         ->set_hostname("ais")
-                         ->set_button_pin(kButtonPin)
-                         ->enable_ota("thisisfine")
-                         ->get_app();
-
-  // RGB LED for activity indication
-  led = new Adafruit_NeoPixel(1, kRGBLEDPin, NEO_GRB + NEO_KHZ800);
-  led->begin();
-  led->setBrightness(30);
+  sensesp_app = (&builder)
+                    ->set_hostname("ais")
+                    ->set_button_pin(kButtonPin)
+                    ->enable_ota("thisisfine")
+                    ->get_app();
 
   Serial1.begin(kAISBitRate, SERIAL_8N1, kUART1RxPin, kUART1TxPin);
 
-  auto nmea0183_io_task = std::make_shared<NMEA0183IOTask>(&Serial1);
+  auto nmea0183_io_task = std::make_shared<NMEA0183IO>(&Serial1);
 
   auto mmsi_parser =
       std::make_shared<MatsutecMMSIParser>(nmea0183_io_task->parser_);
@@ -97,6 +90,33 @@ void setup() {
   voyage_data_parser->persons_on_board_.connect_to(
       std::make_shared<LambdaConsumer<int>>(
           [](int persons) { ESP_LOGI("AIS", "Persons: %d", persons); }));
+
+  /////////////////////////////////////////////////////////////////////
+  // AIS VDM/VDO sentence parser
+
+  auto ais_vdm_parser =
+      std::make_shared<ais::AISVDMSentenceParser>(&nmea0183_io_task->parser_);
+
+  ais_vdm_parser->class_a_position_.connect_to(
+      std::make_shared<LambdaConsumer<ais::ClassAPositionReport>>(
+          [](ais::ClassAPositionReport report) {
+            ESP_LOGI("AIS", "Class A pos: MMSI=%u SOG=%.1f COG=%.1f",
+                     report.mmsi, report.sog, report.cog);
+          }));
+
+  ais_vdm_parser->class_b_position_.connect_to(
+      std::make_shared<LambdaConsumer<ais::ClassBPositionReport>>(
+          [](ais::ClassBPositionReport report) {
+            ESP_LOGI("AIS", "Class B pos: MMSI=%u SOG=%.1f COG=%.1f",
+                     report.mmsi, report.sog, report.cog);
+          }));
+
+  ais_vdm_parser->class_a_static_.connect_to(
+      std::make_shared<LambdaConsumer<ais::ClassAStaticData>>(
+          [](ais::ClassAStaticData data) {
+            ESP_LOGI("AIS", "Class A static: MMSI=%u Name=%s Call=%s",
+                     data.mmsi, data.name, data.callsign);
+          }));
 
   /////////////////////////////////////////////////////////////////////
   // Config objects
@@ -140,46 +160,11 @@ void setup() {
           "status.")
       ->set_sort_order(2500);
 
-  auto port_config_ais_tcp_tx = std::make_shared<PortConfig>(
-      true, 10110, "/AIS/RX Data TCP Port", "AIS TCP RX Port");
-
-  ConfigItem(port_config_ais_tcp_tx)
-      ->set_title("AIS TCP RX Port")
-      ->set_description(
-          "The port on which the AIS TCP server will listen for "
-          "incoming data.")
-      ->set_sort_order(3000);
-
-  int ais_tx_port = port_config_ais_tcp_tx->get_port();
-
-  auto host_port_config_sk_nmea0183_tcp_rx = std::make_shared<HostPortConfig>(
-      true, "openplotter.local", 10110, "Enable", "Host", "Port",
-      "/SignalK/NMEA0183 RX", "Signal K server NMEA 0183 data TCP port");
-
-  ConfigItem(host_port_config_sk_nmea0183_tcp_rx)
-      ->set_title("Signal K NMEA 0183 TCP RX")
-      ->set_description(
-          "The host and port of the Signal K server that will "
-          "receive AIS data from this device.")
-      ->set_sort_order(5000);
-
-  String sk_hostname = host_port_config_sk_nmea0183_tcp_rx->get_host();
-  int sk_n0183_port = host_port_config_sk_nmea0183_tcp_rx->get_port();
-
-  auto ais_tcp_server = std::make_shared<StreamingTCPServer>(
-      ais_tx_port, SensESPApp::get()->get_networking(),
-      port_config_ais_tcp_tx->get_enabled());
-
-  auto sk_nmea0183_tcp_client = std::make_shared<StreamingTCPClient>(
-      sk_hostname, sk_n0183_port, SensESPApp::get()->get_networking(),
-      host_port_config_sk_nmea0183_tcp_rx->get_enabled());
-
   /////////////////////////////////////////////////////////////////////
   // Initialize NMEA 2000 functionality
 
   auto nmea2000 = std::make_shared<tNMEA2000_esp32>(kCANTxPin, kCANRxPin);
 
-  // Reserve enough buffer for sending all messages.
   nmea2000->SetN2kCANSendFrameBufSize(250);
   nmea2000->SetN2kCANReceiveFrameBufSize(250);
 
@@ -203,9 +188,56 @@ void setup() {
     n2k_time_since_rx = 0;
   });
   nmea2000->EnableForward(false);
+
+  const unsigned long kAISTransmitMessages[] = {
+      129038UL, 129039UL, 129794UL, 129802UL,
+      129809UL, 129810UL, 129041UL, 0};
+  nmea2000->ExtendTransmitMessages(kAISTransmitMessages);
+
   nmea2000->Open();
 
   event_loop()->onRepeat(1, [nmea2000]() { nmea2000->ParseMessages(); });
+
+  /////////////////////////////////////////////////////////////////////
+  // AIS → NMEA 2000 senders
+
+  auto class_a_pos_sender =
+      std::make_shared<ais::AISClassAPositionN2kSender>(nmea2000.get());
+  auto class_b_pos_sender =
+      std::make_shared<ais::AISClassBPositionN2kSender>(nmea2000.get());
+  auto class_a_static_sender =
+      std::make_shared<ais::AISClassAStaticN2kSender>(nmea2000.get());
+  auto safety_msg_sender =
+      std::make_shared<ais::AISSafetyMessageN2kSender>(nmea2000.get());
+  auto class_b_static_sender =
+      std::make_shared<ais::AISClassBStaticN2kSender>(nmea2000.get());
+  auto aton_sender =
+      std::make_shared<ais::AISAtoNN2kSender>(nmea2000.get());
+
+  ais_vdm_parser->class_a_position_.connect_to(class_a_pos_sender);
+  ais_vdm_parser->class_b_position_.connect_to(class_b_pos_sender);
+  ais_vdm_parser->class_a_static_.connect_to(class_a_static_sender);
+  ais_vdm_parser->safety_message_.connect_to(safety_msg_sender);
+  ais_vdm_parser->class_b_static_.connect_to(class_b_static_sender);
+  ais_vdm_parser->aton_report_.connect_to(aton_sender);
+
+  /////////////////////////////////////////////////////////////////////
+  // AIS → Signal K output
+
+  auto sk_ais_output = std::make_shared<ais::SKAISOutput>();
+
+  ais_vdm_parser->class_a_position_.connect_to(
+      sk_ais_output->class_a_position_consumer());
+  ais_vdm_parser->class_b_position_.connect_to(
+      sk_ais_output->class_b_position_consumer());
+  ais_vdm_parser->class_a_static_.connect_to(
+      sk_ais_output->class_a_static_consumer());
+  ais_vdm_parser->class_b_static_.connect_to(
+      sk_ais_output->class_b_static_consumer());
+  ais_vdm_parser->safety_message_.connect_to(
+      sk_ais_output->safety_message_consumer());
+  ais_vdm_parser->aton_report_.connect_to(
+      sk_ais_output->aton_report_consumer());
 
   /////////////////////////////////////////////////////////////////////
   // Configuration elements
@@ -236,28 +268,14 @@ void setup() {
 
   n2k_rx_counter.connect_to(n2k_rx_ui_output);
 
-  auto n2k_tx_ui_output = std::make_shared<StatusPageItem<int>>(
-      "NMEA 2000 Transmitted Messages", 0, "NMEA 2000", 310);
-
-  n2k_tx_counter.connect_to(n2k_tx_ui_output);
-
   /////////////////////////////////////////////////////////////////////
   // Initialize the OLED display
 
   auto display = std::make_shared<InfoDisplay>(&Wire);
 
-  /////////////////////////////////////////////////////////////////////
-  // LED animation + main loop
-
-  event_loop()->onRepeat(10, []() {
-    uint16_t hue = (uint16_t)((millis() % 1000) * 65536UL / 1000);
-    led->setPixelColor(0, led->ColorHSV(hue));
-    led->show();
-  });
-
   while (true) {
-    event_loop()->tick();
+    loop();
   }
 }
 
-void loop() {}
+void loop() { event_loop()->tick(); }
