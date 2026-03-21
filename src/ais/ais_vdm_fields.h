@@ -44,11 +44,10 @@ inline VDMParseResult parse_vdm_fields(const char* field_strings,
   const char* payload = field_strings + field_offsets[4];
   int fill_bits = atoi(field_strings + field_offsets[5]);
 
-  auto reassembled = reassembler.add_fragment(total_fragments, fragment_num,
-                                               seq_id, payload, fill_bits,
-                                               now_ms);
+  const auto* reassembled = reassembler.add_fragment(
+      total_fragments, fragment_num, seq_id, payload, fill_bits, now_ms);
 
-  if (!reassembled.has_value()) {
+  if (reassembled == nullptr) {
     if (total_fragments > 1) {
       return VDMParseIncomplete{};  // Valid intermediate fragment
     }

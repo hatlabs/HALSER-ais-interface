@@ -274,7 +274,7 @@ static bool decode_aton_report(const uint8_t* payload, int num_bits,
 std::optional<AISMessage> decode_payload(const char* payload_str,
                                           int fill_bits) {
   constexpr int kMaxPayloadBytes = 128;
-  uint8_t payload[kMaxPayloadBytes];
+  static uint8_t payload[kMaxPayloadBytes];  // static: called from single task
 
   int len = unarmor_payload(payload_str, payload, kMaxPayloadBytes);
   if (len < 1) return std::nullopt;

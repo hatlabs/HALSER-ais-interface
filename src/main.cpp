@@ -310,6 +310,25 @@ void setup() {
 
   auto display = std::make_shared<InfoDisplay>(&Wire);
 
+  // Periodic heap and task stack diagnostics
+  event_loop()->onRepeat(10000, []() {
+    ESP_LOGI("HEAP", "Free: %u  MinFree: %u  LargestBlock: %u",
+             esp_get_free_heap_size(), esp_get_minimum_free_heap_size(),
+             heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+
+    // Report stack high water marks for all tasks
+    static const char* task_names[] = {
+        "SKWSClient", "NMEA0183Task", "TWAI_errMonitor",
+        "httpd", "arduino_events", "loopTask", nullptr};
+    for (int i = 0; task_names[i] != nullptr; i++) {
+      TaskHandle_t h = xTaskGetHandle(task_names[i]);
+      if (h != nullptr) {
+        ESP_LOGI("STACK", "%-16s unused: %u bytes",
+                 task_names[i], uxTaskGetStackHighWaterMark(h));
+      }
+    }
+  });
+
   while (true) {
     loop();
   }
