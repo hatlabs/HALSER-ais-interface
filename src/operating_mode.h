@@ -53,17 +53,6 @@ class OperatingModeLogic {
     return user_mmsi_;
   }
 
-  // When the user changes MMSI via config, and we're in TX+RX mode,
-  // the new MMSI should be sent to the transponder.
-  // Returns the MMSI to send, or nullopt if in RX-only mode.
-  std::optional<const char*> on_user_mmsi_changed(const char* new_mmsi) {
-    set_user_mmsi(new_mmsi);
-    if (mode_ == OperatingMode::kTransmitReceive) {
-      return user_mmsi_;
-    }
-    return std::nullopt;  // Don't update transponder in RX-only mode
-  }
-
  private:
   static constexpr const char* kZeroMMSI = "000000000";
   OperatingMode mode_ = OperatingMode::kTransmitReceive;

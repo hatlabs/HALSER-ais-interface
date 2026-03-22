@@ -85,44 +85,16 @@ void test_effective_mmsi_in_tx_rx() {
 }
 
 // ==========================================================================
-// User MMSI changes
+// User MMSI changes during mode transitions
 // ==========================================================================
 
-void test_mmsi_change_in_tx_rx_returns_new_mmsi() {
-  OperatingModeLogic logic;
-  logic.set_user_mmsi("111111111");
-
-  auto result = logic.on_user_mmsi_changed("222222222");
-  TEST_ASSERT_TRUE(result.has_value());
-  TEST_ASSERT_EQUAL_STRING("222222222", result.value());
-}
-
-void test_mmsi_change_in_rx_only_returns_nullopt() {
+void test_mmsi_updated_while_rx_only_used_on_switch_back() {
   OperatingModeLogic logic;
   logic.set_user_mmsi("111111111");
   logic.set_mode(OperatingMode::kReceiveOnly);
 
-  auto result = logic.on_user_mmsi_changed("222222222");
-  TEST_ASSERT_FALSE_MESSAGE(result.has_value(),
-                            "should not update transponder in RX-only");
-}
-
-void test_mmsi_change_in_rx_only_preserves_user_mmsi() {
-  OperatingModeLogic logic;
-  logic.set_user_mmsi("111111111");
-  logic.set_mode(OperatingMode::kReceiveOnly);
-
-  logic.on_user_mmsi_changed("222222222");
-  TEST_ASSERT_EQUAL_STRING("222222222", logic.get_user_mmsi());
-}
-
-void test_mmsi_restored_after_rx_only_to_tx_rx() {
-  OperatingModeLogic logic;
-  logic.set_user_mmsi("111111111");
-  logic.set_mode(OperatingMode::kReceiveOnly);
-
-  // Change MMSI while in RX-only
-  logic.on_user_mmsi_changed("222222222");
+  // Simulate user changing MMSI while in RX-only
+  logic.set_user_mmsi("222222222");
 
   // Switch back to TX+RX — should use the updated MMSI
   auto result = logic.set_mode(OperatingMode::kTransmitReceive);
@@ -148,10 +120,7 @@ int main() {
   RUN_TEST(test_effective_mmsi_in_rx_only);
   RUN_TEST(test_effective_mmsi_in_tx_rx);
 
-  RUN_TEST(test_mmsi_change_in_tx_rx_returns_new_mmsi);
-  RUN_TEST(test_mmsi_change_in_rx_only_returns_nullopt);
-  RUN_TEST(test_mmsi_change_in_rx_only_preserves_user_mmsi);
-  RUN_TEST(test_mmsi_restored_after_rx_only_to_tx_rx);
+  RUN_TEST(test_mmsi_updated_while_rx_only_used_on_switch_back);
 
   return UNITY_END();
 }

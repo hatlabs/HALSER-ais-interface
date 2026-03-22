@@ -102,10 +102,12 @@ void setup() {
       std::make_shared<RMCSentenceParser>(&nmea0183_io_task->parser_);
 
   constexpr time_t kSyncIntervalSecs = 3600;
+  constexpr time_t kMinValidTime = 1704067200;  // 2024-01-01T00:00:00Z
 
   rmc_parser->datetime_.connect_to(
       std::make_shared<LambdaConsumer<time_t>>([](time_t gnss_time) {
         static time_t last_sync = 0;
+        if (gnss_time < kMinValidTime) return;
         if (last_sync == 0 || (gnss_time - last_sync) >= kSyncIntervalSecs) {
           struct timeval tv = {.tv_sec = gnss_time, .tv_usec = 0};
           settimeofday(&tv, nullptr);
@@ -218,6 +220,8 @@ void setup() {
         }
       }));
 
+  // communication.crewCount is not a standard Signal K path but is used
+  // by some SK servers for persons on board.
   auto sk_persons_listener = std::make_shared<SKValueListener<int>>(
       "communication.crewCount", 5000);
   sk_persons_listener->connect_to(std::make_shared<LambdaConsumer<int>>(
