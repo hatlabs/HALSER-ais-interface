@@ -11,9 +11,13 @@
 namespace ais {
 
 // Wires AIS VDM parser outputs to Signal K contextual outputs.
-// Creates one SKContextualOutput per SK path and provides
+//
+// Standard SensESP SKOutput emits to a fixed path for the local vessel.
+// AIS data requires dynamic context — each target vessel gets its own
+// Signal K context based on MMSI (e.g., vessels.urn:mrn:imo:mmsi:477553000).
+// This class creates one SKContextualOutput per SK path and provides
 // LambdaConsumer instances that transform AIS structs into
-// (context, value) pairs.
+// (context, value) pairs for the correct vessel or AtoN.
 class SKAISOutput {
  public:
   SKAISOutput() {

@@ -1,5 +1,15 @@
 // HALSER AIS Interface Firmware
-// Matsutec HA-102 AIS transponder to NMEA 2000 gateway
+//
+// Application entry point that wires together the data pipeline:
+//   Matsutec HA-102 (NMEA 0183) → AIS decoder → N2K senders + Signal K output
+//
+// Configuration (MMSI, ship data, voyage data) lives in the transponder,
+// not on the ESP32. Config objects query the transponder on startup and
+// send commands on save, using an async request/response pattern.
+//
+// Signal K integration is bidirectional: decoded AIS targets are emitted
+// to the SK server, while destination/ETA/crew updates from the SK server
+// are forwarded to the transponder's voyage data.
 
 #include <NMEA2000_esp32.h>
 #include <sys/time.h>
@@ -197,6 +207,9 @@ void setup() {
 
   /////////////////////////////////////////////////////////////////////
   // Signal K voyage data input — receive updates from SK server
+  // These listeners enable bidirectional sync: when a navigation app
+  // sets the destination or ETA on the SK server, the transponder
+  // is updated automatically so AIS broadcasts reflect the change.
 
   auto sk_destination_listener = std::make_shared<SKValueListener<String>>(
       "navigation.destination.commonName", 5000);

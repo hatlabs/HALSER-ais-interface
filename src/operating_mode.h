@@ -1,3 +1,11 @@
+// Receive-only mode for the Matsutec HA-102 transponder.
+//
+// The HA-102 doesn't have an explicit "receive only" command. Instead,
+// setting the MMSI to 000000000 effectively disables AIS transmission
+// while allowing reception to continue. The user's configured MMSI is
+// preserved in memory so it can be restored when switching back to
+// transmit+receive mode.
+
 #ifndef OPERATING_MODE_H_
 #define OPERATING_MODE_H_
 
