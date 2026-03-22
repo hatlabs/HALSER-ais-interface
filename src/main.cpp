@@ -2,6 +2,7 @@
 // Matsutec HA-102 AIS transponder to NMEA 2000 gateway
 
 #include <NMEA2000_esp32.h>
+#include <sys/time.h>
 
 #include <memory>
 
@@ -10,6 +11,7 @@
 #include "ais/ais_vdm_parser.h"
 #include "matsutec_config.h"
 #include "matsutec_ha102_parser.h"
+#include "operating_mode_config.h"
 #include "sender/ais_n2k_senders.h"
 #include "sensesp/system/serial_number.h"
 #include "sensesp/system/stream_producer.h"
@@ -17,8 +19,10 @@
 #include "sensesp/transforms/zip.h"
 #include "sensesp/ui/status_page_item.h"
 #include "sensesp/ui/ui_controls.h"
+#include "sensesp/signalk/signalk_value_listener.h"
 #include "sensesp_app_builder.h"
 #include "sensesp_nmea0183/nmea0183.h"
+#include "sensesp_nmea0183/sentence_parser/gnss_sentence_parser.h"
 #include "signalk/sk_ais_output.h"
 #include "ssd1306_display.h"
 
@@ -92,6 +96,27 @@ void setup() {
           [](int persons) { ESP_LOGI("AIS", "Persons: %d", persons); }));
 
   /////////////////////////////////////////////////////////////////////
+  // GNSS time sync — set system clock from Matsutec RMC sentences
+
+  auto rmc_parser =
+      std::make_shared<RMCSentenceParser>(&nmea0183_io_task->parser_);
+
+  constexpr time_t kSyncIntervalSecs = 3600;
+  constexpr time_t kMinValidTime = 1704067200;  // 2024-01-01T00:00:00Z
+
+  rmc_parser->datetime_.connect_to(
+      std::make_shared<LambdaConsumer<time_t>>([](time_t gnss_time) {
+        static time_t last_sync = 0;
+        if (gnss_time < kMinValidTime) return;
+        if (last_sync == 0 || (gnss_time - last_sync) >= kSyncIntervalSecs) {
+          struct timeval tv = {.tv_sec = gnss_time, .tv_usec = 0};
+          settimeofday(&tv, nullptr);
+          last_sync = gnss_time;
+          ESP_LOGI("AIS", "System clock set from GNSS: %ld", (long)gnss_time);
+        }
+      }));
+
+  /////////////////////////////////////////////////////////////////////
   // AIS VDM/VDO sentence parser
 
   auto ais_vdm_parser =
@@ -159,6 +184,51 @@ void setup() {
           "board, destination, arrival time, and navigational "
           "status.")
       ->set_sort_order(2500);
+
+  auto operating_mode_config = std::make_shared<OperatingModeConfig>(
+      mmsi_config, &Serial1, "/AIS/Operating Mode");
+
+  ConfigItem(operating_mode_config)
+      ->set_title("Operating Mode")
+      ->set_description(
+          "When receive-only mode is enabled, the transponder will "
+          "not transmit AIS data. The configured MMSI is preserved.")
+      ->set_sort_order(500);
+
+  /////////////////////////////////////////////////////////////////////
+  // Signal K voyage data input — receive updates from SK server
+
+  auto sk_destination_listener = std::make_shared<SKValueListener<String>>(
+      "navigation.destination.commonName", 5000);
+  sk_destination_listener->connect_to(
+      std::make_shared<LambdaConsumer<String>>(
+          [voyage_data_config](String dest) {
+            ESP_LOGI("AIS", "SK destination update: %s", dest.c_str());
+            voyage_data_config->set_destination(dest);
+          }));
+
+  auto sk_eta_listener = std::make_shared<SKValueListener<String>>(
+      "navigation.destination.eta", 5000);
+  sk_eta_listener->connect_to(std::make_shared<LambdaConsumer<String>>(
+      [voyage_data_config](String eta_str) {
+        // Parse ISO 8601 timestamp to time_t
+        struct tm tm = {};
+        if (strptime(eta_str.c_str(), "%Y-%m-%dT%H:%M:%S", &tm) != nullptr) {
+          time_t eta = mktime(&tm);
+          ESP_LOGI("AIS", "SK ETA update: %s", eta_str.c_str());
+          voyage_data_config->set_arrival_time(eta);
+        }
+      }));
+
+  // communication.crewCount is not a standard Signal K path but is used
+  // by some SK servers for persons on board.
+  auto sk_persons_listener = std::make_shared<SKValueListener<int>>(
+      "communication.crewCount", 5000);
+  sk_persons_listener->connect_to(std::make_shared<LambdaConsumer<int>>(
+      [voyage_data_config](int persons) {
+        ESP_LOGI("AIS", "SK persons on board update: %d", persons);
+        voyage_data_config->set_persons_on_board(persons);
+      }));
 
   /////////////////////////////////////////////////////////////////////
   // Initialize NMEA 2000 functionality
