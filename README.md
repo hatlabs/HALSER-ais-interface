@@ -24,6 +24,17 @@ ESP32-C3 firmware for the [HALSER](https://shop.hatlabs.fi/products/halser) boar
 - NMEA 2000 network connection
 - Optional: SSD1306 128x64 OLED display (I2C)
 
+## Hardware Connection
+
+The Matsutec HA-102 uses RS-232 for serial communication. Set the HALSER RX jumper to **R** (RS-232 mode).
+
+The HA-102 has two connectors relevant for data and power:
+
+- **Circular 5-pin connector** — provides power and TX. Use this for power input only.
+- **DB9 connector** — provides GND, TX, and RX. Use this for data communication with HALSER.
+
+Connect the DB9 cable RX and TX wires to the HALSER RS-232 TX and RX pins respectively (cross RX↔TX). A single-ended DB9 cable can be routed to the HALSER enclosure through a cable gland.
+
 ## Building
 
 Requires [PlatformIO](https://platformio.org/).
