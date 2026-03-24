@@ -1,3 +1,14 @@
+// AIS binary payload decoder.
+//
+// AIS messages are transmitted as NMEA 0183 VDM sentences with payloads
+// encoded in ITU-R M.1371 "armored" 6-bit ASCII. Each printable character
+// maps to a 6-bit value (subtract 48; if > 40, subtract 8 more). The
+// resulting bitstream contains fixed-width fields extracted by bit offset.
+//
+// This module decodes the armored payload into typed message structs.
+// It handles 6 message categories (1/2/3, 5, 14, 18/19, 21, 24) with proper
+// handling of special "not available" sentinel values (NaN, 181.0°, etc.).
+
 #include "ais_decoder.h"
 
 #include <cmath>
@@ -84,8 +95,8 @@ static bool decode_class_a_position(const uint8_t* payload, int num_bits,
   if (rot_raw == -128) {
     out.rot = NAN;
   } else {
-    // ROT = 4.733 * sqrt(ROT_sensor), stored as ROT_AIS
-    // We store the raw value in deg/min for simplicity
+    // ITU-R M.1371: ROT_AIS = 4.733 * sqrt(ROT_sensor_deg_per_min)
+    // Invert to get deg/min: ROT_sensor = sign * (|ROT_AIS| / 4.733)^2
     double rot_sign = rot_raw < 0 ? -1.0 : 1.0;
     double rot_abs = static_cast<double>(rot_raw < 0 ? -rot_raw : rot_raw);
     out.rot = rot_sign * (rot_abs / 4.733) * (rot_abs / 4.733);

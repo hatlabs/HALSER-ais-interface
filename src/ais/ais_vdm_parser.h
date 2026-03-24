@@ -11,7 +11,12 @@ namespace ais {
 
 // SentenceParser for AIS VDM (received) and VDO (own ship) sentences.
 // Delegates field parsing and decoding to parse_vdm_fields() and dispatches
-// decoded messages to typed ObservableValue outputs.
+// decoded messages to typed producer outputs.
+//
+// Usage: connect consumers to the public output members using the SensESP
+// Producer/Consumer pattern. Example:
+//   auto parser = std::make_shared<AISVDMSentenceParser>(&nmea_parser);
+//   parser->class_a_position_.connect_to(my_position_consumer);
 class AISVDMSentenceParser : public sensesp::nmea0183::SentenceParser {
  public:
   AISVDMSentenceParser(sensesp::nmea0183::NMEA0183Parser* nmea,
@@ -40,7 +45,7 @@ class AISVDMSentenceParser : public sensesp::nmea0183::SentenceParser {
         result.value());
   }
 
-  // Observable outputs — one per AIS message type
+  // Producer outputs — one per AIS message type
   sensesp::ObservableValue<ClassAPositionReport> class_a_position_;
   sensesp::ObservableValue<ClassBPositionReport> class_b_position_;
   sensesp::ObservableValue<ClassAStaticData> class_a_static_;

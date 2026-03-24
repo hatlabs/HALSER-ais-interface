@@ -1,3 +1,19 @@
+// Matsutec HA-102 transponder configuration via proprietary NMEA 0183 sentences.
+//
+// Configuration (MMSI, ship data, voyage data) is stored in the transponder,
+// not on the ESP32 filesystem. Each config class follows a query/response
+// pattern:
+//   1. On startup (load/refresh): send a query sentence, activate an
+//      AsyncResponseHandler, and wait for the transponder's response
+//      (or a 3-second timeout).
+//   2. On save: send a set sentence with the new values and verify
+//      the transponder echoes them back.
+//
+// Sentence formats:
+//   MMSI:       $PAMC,Q,MID  /  $PAMC,C,MID,<mmsi>,000000000
+//   Ship data:  $ECAIQ,SSD   /  $AISSD,<callsign>,<name>,<bow>,<stern>,<port>,<stbd>,0,
+//   Voyage:     $ECAIQ,VSD   /  $AIVSD,<type>,<draught>,<persons>,<dest>,<HHMMSS>,<day>,<month>,<status>,<flags>
+
 #ifndef AIS_INTERFACE_SRC_MATSUTEC_CONFIG_H_
 #define AIS_INTERFACE_SRC_MATSUTEC_CONFIG_H_
 

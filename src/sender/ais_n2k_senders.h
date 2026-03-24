@@ -1,3 +1,14 @@
+// AIS → NMEA 2000 message senders.
+//
+// Each sender is a consumer in the SensESP Producer/Consumer pipeline:
+// it receives a decoded AIS struct, converts it to the corresponding
+// N2K PGN, and transmits it on the CAN bus. Connect these to the
+// AISVDMSentenceParser's producer outputs via connect_to().
+//
+// Note: AISClassAStaticN2kSender requires a valid system clock (from GNSS
+// time sync) to resolve the ETA year. Before sync, ETA is sent as "not
+// available" to avoid broadcasting incorrect dates.
+
 #ifndef AIS_N2K_SENDERS_H_
 #define AIS_N2K_SENDERS_H_
 
