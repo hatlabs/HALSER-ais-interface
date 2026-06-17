@@ -71,7 +71,7 @@ void setup() {
 
   Serial1.begin(kAISBitRate, SERIAL_8N1, kUART1RxPin, kUART1TxPin);
 
-  auto nmea0183_io_task = std::make_shared<NMEA0183IO>(&Serial1);
+  auto nmea0183_io_task = std::make_shared<NMEA0183IOTask>(&Serial1);
 
   auto mmsi_parser =
       std::make_shared<MatsutecMMSIParser>(nmea0183_io_task->parser_);
@@ -350,6 +350,15 @@ void setup() {
       "NMEA 2000 Received Messages", 0, "NMEA 2000", 300);
 
   n2k_rx_counter.connect_to(n2k_rx_ui_output);
+
+  // Largest contiguous free block. This, not total free memory, gates large
+  // allocations like the ~40 KB TLS handshake, so surface it on the status page
+  // to make heap fragmentation visible.
+  auto largest_block_status = std::make_shared<StatusPageItem<int>>(
+      "Largest free block (bytes)", 0, "System", 250);
+  event_loop()->onRepeat(2000, [largest_block_status]() {
+    largest_block_status->set(static_cast<int>(ESP.getMaxAllocHeap()));
+  });
 
   /////////////////////////////////////////////////////////////////////
   // Initialize the OLED display
