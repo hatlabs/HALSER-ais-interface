@@ -130,11 +130,10 @@ Configuration uses proprietary NMEA 0183 sentences:
 
 ## Dependencies
 
-- SensESP 3.2.0 — IoT framework (WiFi, web UI, Signal K)
+- SensESP ^3.4.0 — IoT framework (WiFi, web UI, Signal K)
 - SensESP/NMEA0183 — NMEA 0183 sentence parsing
 - NMEA2000-library v4.17.2 — NMEA 2000 message handling
 - NMEA2000_twai — ESP32 TWAI (CAN) driver
 - Adafruit SSD1306 v2.5.1 — OLED display
-- FastLED 3.9.4 — RGB LED (SK6805)
 - elapsedMillis v1.0.6 — Timing utilities
 - esp_websocket_client — WebSocket support (Espressif component)

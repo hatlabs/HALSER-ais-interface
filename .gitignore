@@ -4,3 +4,10 @@
 .vscode/launch.json
 .vscode/ipch
 build/
+
+# espidf build artifacts: downloaded components and the generated per-env
+# sdkconfig. dependencies.lock is committed (pins component versions for
+# reproducible builds); sdkconfig.defaults is the tracked source of truth.
+managed_components/
+sdkconfig.*
+!sdkconfig.defaults
