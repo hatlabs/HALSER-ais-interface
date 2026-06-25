@@ -135,21 +135,21 @@ void setup() {
   ais_vdm_parser->class_a_position_.connect_to(
       std::make_shared<LambdaConsumer<ais::ClassAPositionReport>>(
           [](ais::ClassAPositionReport report) {
-            ESP_LOGI("AIS", "Class A pos: MMSI=%u SOG=%.1f COG=%.1f",
+            ESP_LOGV("AIS", "Class A pos: MMSI=%u SOG=%.1f COG=%.1f",
                      report.mmsi, report.sog, report.cog);
           }));
 
   ais_vdm_parser->class_b_position_.connect_to(
       std::make_shared<LambdaConsumer<ais::ClassBPositionReport>>(
           [](ais::ClassBPositionReport report) {
-            ESP_LOGI("AIS", "Class B pos: MMSI=%u SOG=%.1f COG=%.1f",
+            ESP_LOGV("AIS", "Class B pos: MMSI=%u SOG=%.1f COG=%.1f",
                      report.mmsi, report.sog, report.cog);
           }));
 
   ais_vdm_parser->class_a_static_.connect_to(
       std::make_shared<LambdaConsumer<ais::ClassAStaticData>>(
           [](ais::ClassAStaticData data) {
-            ESP_LOGI("AIS", "Class A static: MMSI=%u Name=%s Call=%s",
+            ESP_LOGV("AIS", "Class A static: MMSI=%u Name=%s Call=%s",
                      data.mmsi, data.name, data.callsign);
           }));
 
