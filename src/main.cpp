@@ -93,6 +93,16 @@ void setup() {
   nmea_line_producer->connect_to(nmea_sentence_filter)
       ->connect_to(nmea_parser.get());
 
+  // Debug aid: log every line read from the Matsutec at verbose level. The
+  // default DEBUG runtime level hides it; raise to VERBOSE to see the lines on
+  // /api/log and serial. Kept at verbose because per-line logging on a busy AIS
+  // bus starves the loop.
+  nmea_line_producer->connect_to(std::make_shared<LambdaConsumer<String>>(
+      [](String line) {
+        line.trim();  // drop the CRLF the line producer keeps
+        ESP_LOGV("NMEA0183", "RX: %s", line.c_str());
+      }));
+
   auto mmsi_parser = std::make_shared<MatsutecMMSIParser>(*nmea_parser);
   auto static_ship_data_parser =
       std::make_shared<StaticShipDataParser>(*nmea_parser);
