@@ -123,6 +123,15 @@ If connected, a 128x64 SSD1306 OLED display shows:
 - Line 2: WiFi IP address
 - Line 3: Uptime in seconds
 
+### Status Page
+
+The SensESP web UI status page shows, besides the standard items:
+
+- **NMEA 2000 Received Messages** — messages seen on the bus from other nodes
+- **NMEA 2000 Transmitted Messages** — AIS messages the NMEA 2000 library accepted for sending. Accepted means handed to the CAN driver or queued in the library's 250-frame send buffer, so with no other node on the bus the count still climbs until that buffer fills and then stops. A counter that goes flat after start-up while Signal K deltas keep flowing is the bus-off symptom; a counter that never moves means no AIS data is being decoded.
+- **Largest free block (bytes)** — largest contiguous free heap block; the TLS handshake needs about 40 KB of it
+- **Main loop min free stack (bytes)** — minimum free stack of the main task, which now runs the NMEA 0183 reader, the AIS decoder, and the NMEA 2000 and Signal K outputs
+
 ## Supported AIS Message Types
 
 | AIS Type | Description | NMEA 2000 PGN |
@@ -142,13 +151,13 @@ Matsutec HA-102 (NMEA 0183, 38,400 bit/s)
   │
   │ UART1 (GPIO 3 RX / GPIO 2 TX)
   ▼
-NMEA0183IOTask
+StreamLineProducer → Filter($/!) → NMEA0183Parser  (main ReactESP loop)
   ├── Matsutec config parsers (MMSI, ship data, voyage data)
   ├── RMC parser (GNSS time sync)
   └── AIS VDM/VDO parser
         └── AISReassembler (multi-part message assembly)
               └── AIS Decoder (6-bit binary → typed structs)
-                    ├── N2K Senders → NMEA 2000 bus (TWAI, GPIO 4/5)
+                    ├── N2K Senders → CountingNMEA2000 → NMEA 2000 bus (TWAI, GPIO 4/5)
                     └── SK Output  → Signal K server (per-vessel context)
 
 Web UI (SensESP) ──── Config objects ──── Matsutec (serial commands)
@@ -205,13 +214,14 @@ Framework-agnostic AIS message decoding with no Arduino/SensESP dependencies:
 |------|---------|
 | `main.cpp` | Application entry point — wires all components together |
 | `ssd1306_display.h/.cpp` | OLED display driver (hostname, IP, uptime) |
+| `counting_nmea2000.h` | tNMEA2000_esp32 subclass that counts N2K messages SendMsg accepted (handed to the driver or queued in its send buffer), for the status page; senders take CountingNMEA2000* |
 
 ## Building
 
 Requires [PlatformIO](https://platformio.org/).
 
 ```bash
-# Build firmware
+# Build firmware (halser_espidf)
 pio run
 
 # Upload to connected board
@@ -219,14 +229,33 @@ pio run -t upload
 
 # Monitor serial output
 pio device monitor
+
+# Fast compile check with the precompiled arduino libs (not for flashing)
+pio run -e halser
 ```
+
+There are two build environments:
+
+- `halser_espidf` (the default) builds ESP-IDF from source together with the Arduino core. This makes `sdkconfig.defaults` authoritative and enables the dynamic mbedTLS buffers the ESP32-C3 needs to hold a TLS Signal K connection. Flash this one.
+- `halser` uses the precompiled Arduino libraries and ignores `sdkconfig.defaults`. It is a fast compile check only: against a TLS Signal K server a device running it runs out of memory during the TLS handshake and never connects (it boots and joins WiFi, but Signal K stays Disconnected).
+
+The first `halser_espidf` build downloads ESP-IDF (several hundred megabytes) and takes several minutes. On Windows, clone to a short path without spaces; the ESP-IDF build fails on long paths.
+
+### Upgrading from an earlier release
+
+The environment named `halser` used to be the build to flash. It now means the arduino compile check, and `halser_espidf` is what you flash (`pio run -t upload` with no `-e` does the right thing).
+
+- After pulling a change to `sdkconfig.defaults`, delete `sdkconfig.halser_espidf` from the project root; it is regenerated on the next build. A previously generated one overrides `sdkconfig.defaults`, and `pio run -t fullclean` does not remove it.
+- Moving from an arduino-built firmware to the espidf build over OTA is untested; flash once over USB.
+- WiFi and Signal K settings survive the switch: the partition table (`min_spiffs.csv`) is unchanged.
 
 ## Testing
 
-Unit tests run on the native (x86_64) platform:
+Unit tests run on the host and need a host C++ compiler (clang or gcc):
 
 ```bash
-# Run all tests
+# Run all tests (always pass -e native: a bare `pio test` would pick the
+# espidf env and try to upload)
 pio test -e native
 ```
 
