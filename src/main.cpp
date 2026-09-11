@@ -67,7 +67,7 @@ void setup() {
   sensesp_app = (&builder)
                     ->set_hostname("ais")
                     ->set_button_pin(kButtonPin)
-                    ->enable_ota("thisisfine")
+                    ->enable_ota("change-me")
                     ->get_app();
 
   // Bytes now drain only when the main loop ticks, so give the UART more slack

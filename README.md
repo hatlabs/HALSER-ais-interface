@@ -246,6 +246,7 @@ The first `halser_espidf` build downloads ESP-IDF (several hundred megabytes) an
 The environment named `halser` used to be the build to flash. It now means the arduino compile check, and `halser_espidf` is what you flash (`pio run -t upload` with no `-e` does the right thing).
 
 - After pulling a change to `sdkconfig.defaults`, delete `sdkconfig.halser_espidf` from the project root; it is regenerated on the next build. A previously generated one overrides `sdkconfig.defaults`, and `pio run -t fullclean` does not remove it.
+- The OTA password in `main.cpp` (`enable_ota("change-me")`) is a placeholder: replace it before deploying. It must match `upload_flags = --auth=<password>` in your own espota upload configuration, which this repository does not ship.
 - Moving from an arduino-built firmware to the espidf build over OTA is untested; flash once over USB.
 - WiFi and Signal K settings survive the switch: the partition table (`min_spiffs.csv`) is unchanged.
 
