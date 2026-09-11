@@ -1,5 +1,6 @@
 #include <unity.h>
 
+#include <cstdio>
 #include <cstring>
 
 // Include implementations for native linking
@@ -11,8 +12,9 @@ void setUp() {}
 void tearDown() {}
 
 // Helper: build null-separated field string and offsets from a VDM sentence.
-// Simulates what SentenceParser::parse() does: splits by commas.
-// sentence: just the fields part (after "!AIVDM," and before "*xx")
+// Simulates what SentenceParser::parse() does: the address token ("!AIVDM") is
+// the zeroth field and the comma-separated data fields follow it.
+// fields_str: just the data fields (after "!AIVDM," and before "*xx")
 // e.g. "1,1,,B,177KQJ5000G?tO`K>RA1wUbN0TKH,0"
 struct ParsedFields {
   char buffer[512];
@@ -22,7 +24,7 @@ struct ParsedFields {
 
 ParsedFields split_fields(const char* fields_str) {
   ParsedFields result{};
-  strncpy(result.buffer, fields_str, sizeof(result.buffer) - 1);
+  snprintf(result.buffer, sizeof(result.buffer), "!AIVDM,%s", fields_str);
   result.count = 0;
   result.offsets[0] = 0;
 
@@ -136,7 +138,8 @@ void test_vdm_fields_type18() {
 // ==========================================================================
 
 void test_vdm_fields_too_few_fields() {
-  auto f = split_fields("1,1,,B,payload");  // only 5 fields
+  // Valid Type 1 payload but no fill_bits field: 6 fields including the address
+  auto f = split_fields("1,1,,B,177KQJ5000G?tO`K>RA1wUbN0TKH");
   ais::AISReassembler reassembler;
 
   auto result =
