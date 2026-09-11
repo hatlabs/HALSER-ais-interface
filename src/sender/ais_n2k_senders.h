@@ -5,6 +5,9 @@
 // N2K PGN, and transmits it on the CAN bus. Connect these to the
 // AISVDMSentenceParser's producer outputs via connect_to().
 //
+// The bus handle is a CountingNMEA2000* (not tNMEA2000*) so that each SendMsg
+// is tallied by the bus itself -- the transmit count lives there, not here.
+//
 // Note: AISClassAStaticN2kSender requires a valid system clock (from GNSS
 // time sync) to resolve the ETA year. Before sync, ETA is sent as "not
 // available" to avoid broadcasting incorrect dates.
@@ -19,6 +22,7 @@
 #include "N2kMsg.h"
 #include "ais/ais_conversions.h"
 #include "ais/ais_message_types.h"
+#include "counting_nmea2000.h"
 #include "sensesp/system/lambda_consumer.h"
 
 namespace ais {
@@ -26,7 +30,8 @@ namespace ais {
 class AISClassAPositionN2kSender
     : public sensesp::ValueConsumer<ClassAPositionReport> {
  public:
-  AISClassAPositionN2kSender(tNMEA2000* nmea2000) : nmea2000_(nmea2000) {}
+  AISClassAPositionN2kSender(CountingNMEA2000* nmea2000)
+      : nmea2000_(nmea2000) {}
 
   void set(const ClassAPositionReport& r) override {
     tN2kMsg msg;
@@ -41,13 +46,14 @@ class AISClassAPositionN2kSender
   }
 
  private:
-  tNMEA2000* nmea2000_;
+  CountingNMEA2000* nmea2000_;
 };
 
 class AISClassBPositionN2kSender
     : public sensesp::ValueConsumer<ClassBPositionReport> {
  public:
-  AISClassBPositionN2kSender(tNMEA2000* nmea2000) : nmea2000_(nmea2000) {}
+  AISClassBPositionN2kSender(CountingNMEA2000* nmea2000)
+      : nmea2000_(nmea2000) {}
 
   void set(const ClassBPositionReport& r) override {
     tN2kMsg msg;
@@ -64,13 +70,14 @@ class AISClassBPositionN2kSender
   }
 
  private:
-  tNMEA2000* nmea2000_;
+  CountingNMEA2000* nmea2000_;
 };
 
 class AISClassAStaticN2kSender
     : public sensesp::ValueConsumer<ClassAStaticData> {
  public:
-  AISClassAStaticN2kSender(tNMEA2000* nmea2000) : nmea2000_(nmea2000) {}
+  AISClassAStaticN2kSender(CountingNMEA2000* nmea2000)
+      : nmea2000_(nmea2000) {}
 
   void set(const ClassAStaticData& d) override {
     auto dims = dimensions_to_n2k(d.to_bow, d.to_stern, d.to_port,
@@ -106,13 +113,14 @@ class AISClassAStaticN2kSender
   }
 
  private:
-  tNMEA2000* nmea2000_;
+  CountingNMEA2000* nmea2000_;
 };
 
 class AISSafetyMessageN2kSender
     : public sensesp::ValueConsumer<SafetyMessage> {
  public:
-  AISSafetyMessageN2kSender(tNMEA2000* nmea2000) : nmea2000_(nmea2000) {}
+  AISSafetyMessageN2kSender(CountingNMEA2000* nmea2000)
+      : nmea2000_(nmea2000) {}
 
   void set(const SafetyMessage& m) override {
     tN2kMsg msg;
@@ -123,13 +131,14 @@ class AISSafetyMessageN2kSender
   }
 
  private:
-  tNMEA2000* nmea2000_;
+  CountingNMEA2000* nmea2000_;
 };
 
 class AISClassBStaticN2kSender
     : public sensesp::ValueConsumer<ClassBStaticData> {
  public:
-  AISClassBStaticN2kSender(tNMEA2000* nmea2000) : nmea2000_(nmea2000) {}
+  AISClassBStaticN2kSender(CountingNMEA2000* nmea2000)
+      : nmea2000_(nmea2000) {}
 
   void set(const ClassBStaticData& d) override {
     if (d.part_number == 0) {
@@ -154,12 +163,12 @@ class AISClassBStaticN2kSender
   }
 
  private:
-  tNMEA2000* nmea2000_;
+  CountingNMEA2000* nmea2000_;
 };
 
 class AISAtoNN2kSender : public sensesp::ValueConsumer<AtoNReport> {
  public:
-  AISAtoNN2kSender(tNMEA2000* nmea2000) : nmea2000_(nmea2000) {}
+  AISAtoNN2kSender(CountingNMEA2000* nmea2000) : nmea2000_(nmea2000) {}
 
   void set(const AtoNReport& r) override {
     tN2kAISAtoNReportData data;
@@ -192,7 +201,7 @@ class AISAtoNN2kSender : public sensesp::ValueConsumer<AtoNReport> {
   }
 
  private:
-  tNMEA2000* nmea2000_;
+  CountingNMEA2000* nmea2000_;
 };
 
 }  // namespace ais

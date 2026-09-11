@@ -19,6 +19,7 @@
 #include "Wire.h"
 #include "elapsedMillis.h"
 #include "ais/ais_vdm_parser.h"
+#include "counting_nmea2000.h"
 #include "matsutec_config.h"
 #include "matsutec_ha102_parser.h"
 #include "operating_mode_config.h"
@@ -263,7 +264,7 @@ void setup() {
   /////////////////////////////////////////////////////////////////////
   // Initialize NMEA 2000 functionality
 
-  auto nmea2000 = std::make_shared<tNMEA2000_esp32>(kCANTxPin, kCANRxPin);
+  auto nmea2000 = std::make_shared<CountingNMEA2000>(kCANTxPin, kCANRxPin);
 
   nmea2000->SetN2kCANSendFrameBufSize(250);
   nmea2000->SetN2kCANReceiveFrameBufSize(250);
@@ -368,6 +369,11 @@ void setup() {
 
   n2k_rx_counter.connect_to(n2k_rx_ui_output);
 
+  auto n2k_tx_ui_output = std::make_shared<StatusPageItem<int>>(
+      "NMEA 2000 Transmitted Messages", 0, "NMEA 2000", 310);
+
+  nmea2000->tx_count_.connect_to(n2k_tx_ui_output);
+
   // Largest contiguous free block. This, not total free memory, gates large
   // allocations like the ~40 KB TLS handshake, so surface it on the status page
   // to make heap fragmentation visible.
@@ -375,6 +381,17 @@ void setup() {
       "Largest free block (bytes)", 0, "System", 250);
   event_loop()->onRepeat(2000, [largest_block_status]() {
     largest_block_status->set(static_cast<int>(ESP.getMaxAllocHeap()));
+  });
+
+  // Main-loop task stack headroom: NMEA 0183 reading, AIS decoding, and the N2K /
+  // SK pipeline all run on this task now, so this figure must stay well above
+  // zero. uxTaskGetStackHighWaterMark returns the running task's minimum free
+  // stack in bytes on ESP-IDF.
+  auto main_loop_stack_status = std::make_shared<StatusPageItem<int>>(
+      "Main loop min free stack (bytes)", 0, "System", 260);
+  event_loop()->onRepeat(2000, [main_loop_stack_status]() {
+    main_loop_stack_status->set(
+        static_cast<int>(uxTaskGetStackHighWaterMark(nullptr)));
   });
 
   /////////////////////////////////////////////////////////////////////
