@@ -7,8 +7,12 @@ HALSER AIS interface firmware — an ESP32-C3 firmware that bridges a Matsutec H
 ## Build Commands
 
 ```bash
-# Build firmware
+# Build firmware (halser_espidf, the env to flash; builds ESP-IDF from source)
 pio run
+
+# Fast compile check with the precompiled arduino libs (not for flashing:
+# it cannot hold a TLS Signal K connection)
+pio run -e halser
 
 # Upload to connected board
 pio run -t upload
@@ -26,13 +30,13 @@ pio test -e native
 
 ```
 Matsutec HA-102 (NMEA 0183, 38,400 bit/s, GPIO 3 RX / GPIO 2 TX)
-  → NMEA0183IOTask (dedicated FreeRTOS task)
+  → StreamLineProducer + Filter($/!) + NMEA0183Parser (read on the main ReactESP loop)
     → Matsutec config parsers (MMSI, ship data, voyage data)
     → RMC parser (GNSS time sync)
     → AIS VDM/VDO parser
       → AISReassembler (multi-part message assembly)
         → AIS Decoder (6-bit binary → typed structs)
-          → N2K Senders → tNMEA2000_esp32 (TWAI, GPIO 4 TX / GPIO 5 RX)
+          → N2K Senders → CountingNMEA2000 (tNMEA2000_esp32 + TX counter; TWAI, GPIO 4 TX / GPIO 5 RX)
           → SK Output → Signal K server (per-vessel context)
 
 Web UI ←→ Config objects ←→ Matsutec (serial commands)
@@ -65,6 +69,7 @@ Signal K server → SKValueListeners → Voyage data config → Matsutec
 **Application** (`src/`):
 - `main.cpp` — Application entry point; initializes all components and wires the data pipeline
 - `ssd1306_display.h/.cpp` — OLED display driver (hostname, IP, uptime; updates every 1 second)
+- `counting_nmea2000.h` — tNMEA2000_esp32 subclass that counts N2K messages SendMsg accepted (handed to the driver or queued in its send buffer), for the status page; senders take CountingNMEA2000*
 
 ### Hardware Pin Assignments
 
@@ -130,10 +135,12 @@ Configuration uses proprietary NMEA 0183 sentences:
 
 ## Dependencies
 
-- SensESP ^3.4.0 — IoT framework (WiFi, web UI, Signal K)
+- SensESP ^3.5.0 — IoT framework (WiFi, web UI, Signal K)
 - SensESP/NMEA0183 — NMEA 0183 sentence parsing
 - NMEA2000-library v4.17.2 — NMEA 2000 message handling
 - NMEA2000_twai — ESP32 TWAI (CAN) driver
 - Adafruit SSD1306 v2.5.1 — OLED display
 - elapsedMillis v1.0.6 — Timing utilities
-- esp_websocket_client — WebSocket support (Espressif component)
+- esp_websocket_client — WebSocket support (Espressif component). SensESP includes its header but declares no dependency, so `halser_espidf` takes it from `src/idf_component.yml` and the arduino `halser` env from a registry zip in its `lib_deps`.
+
+`dependencies.lock` is committed. A lock re-resolution diff alone (a different toolchain re-resolving a component) is not a change to commit.

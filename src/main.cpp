@@ -19,6 +19,7 @@
 #include "Wire.h"
 #include "elapsedMillis.h"
 #include "ais/ais_vdm_parser.h"
+#include "counting_nmea2000.h"
 #include "matsutec_config.h"
 #include "matsutec_ha102_parser.h"
 #include "operating_mode_config.h"
@@ -66,19 +67,47 @@ void setup() {
   sensesp_app = (&builder)
                     ->set_hostname("ais")
                     ->set_button_pin(kButtonPin)
-                    ->enable_ota("thisisfine")
+                    ->enable_ota("change-me")
                     ->get_app();
 
+  // Bytes now drain only when the main loop ticks, so give the UART more slack
+  // than the 256-byte default (~100 ms at 38400 bit/s with the 128-byte FIFO).
+  Serial1.setRxBufferSize(1024);
   Serial1.begin(kAISBitRate, SERIAL_8N1, kUART1RxPin, kUART1TxPin);
 
-  auto nmea0183_io_task = std::make_shared<NMEA0183IOTask>(&Serial1);
+  // NMEA 0183 input, read on the main ReactESP loop. The ESP32-C3 is single-core
+  // (CONFIG_FREERTOS_UNICORE), so a dedicated reader task buys no parallelism and
+  // only adds a cross-task propagation hazard between the parser and its
+  // main-loop consumers (AIS decode, N2K senders, SK output); reading here keeps
+  // the whole pipeline single-threaded. Config writes are non-blocking (a direct
+  // println, or deferred via onDelay(0)) and the response handlers never wait on
+  // a semaphore, so save() never stalls the loop that now parses the
+  // transponder's ACK.
+  auto nmea_parser = std::make_shared<NMEA0183Parser>();
+  auto nmea_line_producer =
+      std::make_shared<StreamLineProducer>(&Serial1, event_loop());
+  auto nmea_sentence_filter =
+      std::make_shared<Filter<String>>([](const String& line) {
+        return line.startsWith("$") || line.startsWith("!");
+      });
+  nmea_line_producer->connect_to(nmea_sentence_filter)
+      ->connect_to(nmea_parser.get());
 
-  auto mmsi_parser =
-      std::make_shared<MatsutecMMSIParser>(nmea0183_io_task->parser_);
+  // Debug aid: log every line read from the Matsutec at verbose level. The
+  // default DEBUG runtime level hides it; raise to VERBOSE to see the lines on
+  // /api/log and serial. Kept at verbose because per-line logging on a busy AIS
+  // bus starves the loop.
+  nmea_line_producer->connect_to(std::make_shared<LambdaConsumer<String>>(
+      [](String line) {
+        line.trim();  // drop the CRLF the line producer keeps
+        ESP_LOGV("NMEA0183", "RX: %s", line.c_str());
+      }));
+
+  auto mmsi_parser = std::make_shared<MatsutecMMSIParser>(*nmea_parser);
   auto static_ship_data_parser =
-      std::make_shared<StaticShipDataParser>(nmea0183_io_task->parser_);
+      std::make_shared<StaticShipDataParser>(*nmea_parser);
   auto voyage_data_parser =
-      std::make_shared<VoyageStaticDataParser>(nmea0183_io_task->parser_);
+      std::make_shared<VoyageStaticDataParser>(*nmea_parser);
 
   mmsi_parser->mmsi_.connect_to(std::make_shared<LambdaConsumer<String>>(
       [](String mmsi) { ESP_LOGI("AIS", "MMSI: %s", mmsi.c_str()); }));
@@ -108,8 +137,7 @@ void setup() {
   /////////////////////////////////////////////////////////////////////
   // GNSS time sync — set system clock from Matsutec RMC sentences
 
-  auto rmc_parser =
-      std::make_shared<RMCSentenceParser>(&nmea0183_io_task->parser_);
+  auto rmc_parser = std::make_shared<RMCSentenceParser>(nmea_parser.get());
 
   constexpr time_t kSyncIntervalSecs = 3600;
   constexpr time_t kMinValidTime = 1704067200;  // 2024-01-01T00:00:00Z
@@ -130,7 +158,7 @@ void setup() {
   // AIS VDM/VDO sentence parser
 
   auto ais_vdm_parser =
-      std::make_shared<ais::AISVDMSentenceParser>(&nmea0183_io_task->parser_);
+      std::make_shared<ais::AISVDMSentenceParser>(nmea_parser.get());
 
   ais_vdm_parser->class_a_position_.connect_to(
       std::make_shared<LambdaConsumer<ais::ClassAPositionReport>>(
@@ -246,7 +274,7 @@ void setup() {
   /////////////////////////////////////////////////////////////////////
   // Initialize NMEA 2000 functionality
 
-  auto nmea2000 = std::make_shared<tNMEA2000_esp32>(kCANTxPin, kCANRxPin);
+  auto nmea2000 = std::make_shared<CountingNMEA2000>(kCANTxPin, kCANRxPin);
 
   nmea2000->SetN2kCANSendFrameBufSize(250);
   nmea2000->SetN2kCANReceiveFrameBufSize(250);
@@ -351,6 +379,11 @@ void setup() {
 
   n2k_rx_counter.connect_to(n2k_rx_ui_output);
 
+  auto n2k_tx_ui_output = std::make_shared<StatusPageItem<int>>(
+      "NMEA 2000 Transmitted Messages", 0, "NMEA 2000", 310);
+
+  nmea2000->tx_count_.connect_to(n2k_tx_ui_output);
+
   // Largest contiguous free block. This, not total free memory, gates large
   // allocations like the ~40 KB TLS handshake, so surface it on the status page
   // to make heap fragmentation visible.
@@ -358,6 +391,17 @@ void setup() {
       "Largest free block (bytes)", 0, "System", 250);
   event_loop()->onRepeat(2000, [largest_block_status]() {
     largest_block_status->set(static_cast<int>(ESP.getMaxAllocHeap()));
+  });
+
+  // Main-loop task stack headroom: NMEA 0183 reading, AIS decoding, and the N2K /
+  // SK pipeline all run on this task now, so this figure must stay well above
+  // zero. uxTaskGetStackHighWaterMark returns the running task's minimum free
+  // stack in bytes on ESP-IDF.
+  auto main_loop_stack_status = std::make_shared<StatusPageItem<int>>(
+      "Main loop min free stack (bytes)", 0, "System", 260);
+  event_loop()->onRepeat(2000, [main_loop_stack_status]() {
+    main_loop_stack_status->set(
+        static_cast<int>(uxTaskGetStackHighWaterMark(nullptr)));
   });
 
   /////////////////////////////////////////////////////////////////////

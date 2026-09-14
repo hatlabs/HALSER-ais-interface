@@ -3,8 +3,9 @@
 # console there so logs reach the usbmodem port under the espidf build.
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 
-# The settings below are consumed by the espidf+arduino build (env:halser):
-# ESP-IDF is built from source, so sdkconfig is authoritative.
+# Settings below are only consumed by the espidf+arduino dual build
+# (env:halser_espidf), where sdkconfig is authoritative. The precompiled
+# arduino build (env:halser) ignores this file entirely.
 # AUTOSTART_ARDUINO + FREERTOS_HZ=1000 are required by the Arduino core.
 CONFIG_AUTOSTART_ARDUINO=y
 CONFIG_FREERTOS_HZ=1000
@@ -18,6 +19,10 @@ CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=4096
 CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1=n
 CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+
+# Needed by the task stack view on the SensESP status page
+# (uxTaskGetSystemState).
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y
 
 # Allocate the mbedTLS TX/RX record buffers on demand and free them between
 # operations, instead of holding two 16 KB buffers for the whole connection.
